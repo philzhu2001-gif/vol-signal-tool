@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>成交量均线信号</title>
+    <style>
+        :root {
+            --bg: #0f1419;
+            --card: #1c2733;
+            --border: #2f3e50;
+            --green: #00c853;
+            --red: #ff5252;
+            --yellow: #ffd600;
+            --blue: #448aff;
+            --text: #e6edf3;
+            --muted: #7d8590;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; }
+        h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 8px; }
+        .subtitle { font-size: 0.85rem; color: var(--muted); margin-bottom: 24px; }
+
+        .signal-card { background: var(--card); border-radius: 12px; padding: 24px; margin-bottom: 20px; border: 1px solid var(--border); }
+        .signal-header { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+        .signal-badge { width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: 700; }
+        .signal-badge.buy { background: rgba(0,200,83,0.15); color: var(--green); }
+        .signal-badge.hold { background: rgba(255,214,0,0.15); color: var(--yellow); }
+        .signal-badge.sell { background: rgba(255,82,82,0.15); color: var(--red); }
+        .signal-badge.wait { background: rgba(125,133,144,0.15); color: var(--muted); }
+        .signal-info h2 { font-size: 1.25rem; margin-bottom: 4px; }
+        .signal-info .date { color: var(--muted); font-size: 0.85rem; }
+        .signal-detail { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+        .detail-item { background: rgba(255,255,255,0.03); border-radius: 8px; padding: 12px; }
+        .detail-item .label { font-size: 0.75rem; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .detail-item .value { font-size: 1.1rem; font-weight: 600; }
+        .signal-message { margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; font-size: 0.9rem; color: var(--muted); border-left: 3px solid var(--border); }
+        .signal-message.buy { border-left-color: var(--green); }
+        .signal-message.sell { border-left-color: var(--red); }
+
+        .section { background: var(--card); border-radius: 12px; padding: 20px; margin-bottom: 16px; border: 1px solid var(--border); }
+        .section-title { font-size: 0.85rem; font-weight: 600; color: var(--muted); margin-bottom: 16px; text-transform: uppercase; letter-spacing: 1px; }
+
+        .chart-container { width: 100%; height: 260px; position: relative; }
+
+        .history-table { width: 100%; border-collapse: collapse; }
+        .history-table th { text-align: left; padding: 8px 12px; font-size: 0.75rem; color: var(--muted); border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.5px; }
+        .history-table td { padding: 10px 12px; font-size: 0.9rem; border-bottom: 1px solid rgba(47,62,80,0.5); }
+        .history-table tr:last-child td { border-bottom: none; }
+        .history-table .num-col { text-align: right; font-variant-numeric: tabular-nums; }
+        .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+        .tag.buy { background: rgba(0,200,83,0.15); color: var(--green); }
+        .tag.sell { background: rgba(255,82,82,0.15); color: var(--red); }
+        .tag.hold { background: rgba(255,214,0,0.15); color: var(--yellow); }
+        .tag.wait { background: rgba(125,133,144,0.15); color: var(--muted); }
+
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+        .stat-card { background: rgba(255,255,255,0.03); border-radius: 8px; padding: 16px; }
+        .stat-card .label { font-size: 0.75rem; color: var(--muted); margin-bottom: 8px; }
+        .stat-card .value { font-size: 1.3rem; font-weight: 700; }
+        .stat-card .sub { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
+        .stat-card.green .value { color: var(--green); }
+
+        .etf-table { width: 100%; border-collapse: collapse; }
+        .etf-table th { text-align: left; padding: 8px 10px; font-size: 0.75rem; color: var(--muted); border-bottom: 1px solid var(--border); }
+        .etf-table td { padding: 10px 10px; font-size: 0.85rem; border-bottom: 1px solid rgba(47,62,80,0.5); }
+        .etf-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+        .etf-table tr:last-child td { border-bottom: none; }
+
+        .footer { text-align: center; padding: 20px; color: var(--muted); font-size: 0.75rem; }
+        .footer a { color: var(--blue); text-decoration: none; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>📊 成交量均线信号</h1>
+    <p class="subtitle">Wind全A等权 · MA3/60 · 每日收盘后自动更新</p>
+
+    <div class="signal-card" id="signalCard">
+        <div class="signal-header">
+            <div class="signal-badge wait" id="signalBadge">—</div>
+            <div class="signal-info">
+                <h2 id="signalTitle">加载中...</h2>
+                <p class="date" id="signalDate">—</p>
+            </div>
+        </div>
+        <div class="signal-detail">
+            <div class="detail-item"><div class="label">收盘价</div><div class="value" id="detailClose">—</div></div>
+            <div class="detail-item"><div class="label">涨跌</div><div class="value" id="detailPct">—</div></div>
+            <div class="detail-item"><div class="label">MA3 成交量</div><div class="value" id="detailMa3">—</div></div>
+            <div class="detail-item"><div class="label">MA60 成交量</div><div class="value" id="detailMa60">—</div></div>
+            <div class="detail-item"><div class="label">MA3/MA60</div><div class="value" id="detailRatio">—</div></div>
+            <div class="detail-item"><div class="label">成交量</div><div class="value" id="detailVol">—</div></div>
+        </div>
+        <div class="signal-message" id="signalMsg">加载中...</div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">📉 近30日成交量均线</div>
+        <div class="chart-container">
+            <canvas id="maChart"></canvas>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">📋 近期信号记录</div>
+        <table class="history-table">
+            <thead>
+                <tr>
+                    <th>日期</th><th>信号</th><th class="num-col">收盘</th>
+                    <th class="num-col">涨跌</th><th class="num-col">MA3</th>
+                    <th class="num-col">MA60</th><th class="num-col">MA3/MA60</th>
+                </tr>
+            </thead>
+            <tbody id="historyBody">
+                <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px;">加载中...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <div class="section-title">📈 回测研究结论（25年验证）</div>
+        <div class="stats-grid">
+            <div class="stat-card green">
+                <div class="label">Wind全A等权 · 最优策略</div>
+                <div class="value">MA3/60 · 100%</div>
+                <div class="sub">年化 19.41% · 夏普 1.046</div>
+            </div>
+            <div class="stat-card green">
+                <div class="label">超额收益（vs买入持有）</div>
+                <div class="value">+1.59%</div>
+                <div class="sub">年化超额</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">最大回撤改善</div>
+                <div class="value">+7.38%</div>
+                <div class="sub">-35.23% vs -42.61%</div>
+            </div>
+            <div class="stat-card green">
+                <div class="label">夏普比率</div>
+                <div class="value">1.046</div>
+                <div class="sub">买入持有 0.953</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">🔄 跨ETF普适性验证（9只ETF）</div>
+        <table class="etf-table">
+            <thead>
+                <tr>
+                    <th>ETF</th><th class="num-col">年化收益</th>
+                    <th class="num-col">基准</th><th class="num-col">超额</th>
+                    <th class="num-col">最大回撤</th><th class="num-col">夏普</th>
+                </tr>
+            </thead>
+            <tbody id="etfBody"></tbody>
+        </table>
+        <p style="font-size:0.75rem;color:var(--muted);margin-top:12px;">结论：6/9 ETF跑赢买入持有（66.7%），成长/小盘ETF效果更佳</p>
+    </div>
+
+    <div class="section">
+        <div class="section-title">🎯 563300深度分析（信号源对比）</div>
+        <div class="stats-grid">
+            <div class="stat-card green">
+                <div class="label">Wind全A信号超额</div>
+                <div class="value">+9.42%</div>
+                <div class="sub">信号B · 含交易成本</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">自身MA信号超额</div>
+                <div class="value">+0.34%</div>
+                <div class="sub">信号A · 含交易成本</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">信号相关系数</div>
+                <div class="value">0.178</div>
+                <div class="sub">两者差异极大，可互补</div>
+            </div>
+            <div class="stat-card green">
+                <div class="label">最优参数一致性</div>
+                <div class="value">✅ 验证通过</div>
+                <div class="sub">MA3/60 排名第1/20</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        数据来源：Wind全A等权指数（8841388.WI）| 参数：MA3/MA60 | 更新：每日18:00<br>
+        <a href="https://github.com/philzhu2001-gif/vol-signal-tool" target="_blank">GitHub</a>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+// 数据由 deploy.py 注入到 window.__PAGE_DATA__
+const PAGE_DATA = window.__PAGE_DATA__ || { latest: null, history: [], backtest: {} };
+
+function formatVol(v) {
+    if (!v || v <= 0) return '—';
+    if (v >= 1e8) return (v/1e8).toFixed(2) + '亿';
+    if (v >= 1e4) return (v/1e4).toFixed(0) + '万';
+    return v.toLocaleString('zh-CN');
+}
+
+function renderSignalCard() {
+    const s = PAGE_DATA.latest;
+    if (!s) return;
+    const badge = document.getElementById('signalBadge');
+    const titles = { buy: '买入信号 · 金叉', hold: '持有信号', sell: '卖出信号 · 死叉', wait: '等待信号' };
+    badge.className = 'signal-badge ' + s.signal;
+    badge.textContent = s.signal === 'buy' ? 'B' : s.signal === 'sell' ? 'S' : s.signal === 'hold' ? 'H' : 'W';
+    document.getElementById('signalTitle').textContent = titles[s.signal] || s.signal;
+    document.getElementById('signalDate').textContent = s.date + ' 收盘';
+    document.getElementById('signalMsg').textContent = s.message;
+    document.getElementById('signalMsg').className = 'signal-message ' + (s.signal === 'buy' ? 'buy' : s.signal === 'sell' ? 'sell' : '');
+    document.getElementById('detailClose').textContent = s.close ? s.close.toLocaleString('zh-CN', {minimumFractionDigits:2}) : '—';
+    document.getElementById('detailPct').textContent = (s.pct_chg !== null && s.pct_chg !== undefined) ? (s.pct_chg >= 0 ? '+' : '') + s.pct_chg.toFixed(2) + '%' : '—';
+    document.getElementById('detailMa3').textContent = formatVol(s.ma_vol_short);
+    document.getElementById('detailMa60').textContent = formatVol(s.ma_vol_long);
+    document.getElementById('detailRatio').textContent = s.short_long_ratio ? (s.short_long_ratio * 100).toFixed(1) + '%' : '—';
+    document.getElementById('detailVol').textContent = formatVol(s.volume);
+}
+
+let maChart = null;
+function renderChart() {
+    const ctx = document.getElementById('maChart').getContext('2d');
+    const hist = PAGE_DATA.history || [];
+    if (!hist.length) return;
+
+    const labels = hist.map(r => r.date.slice(5));
+    const vols = hist.map(r => r.volume);
+    const ma3s = hist.map(r => r.ma_vol_short);
+    const ma60s = hist.map(r => r.ma_vol_long);
+    const maxV = Math.max(...vols, 1);
+
+    if (maChart) maChart.destroy();
+    maChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [
+                { label: '成交量', data: vols.map(v => v/maxV), backgroundColor: 'rgba(100,100,100,0.3)', borderColor: 'rgba(100,100,100,0.5)', type: 'bar', order: 2 },
+                { label: 'MA3', data: ma3s.map(v => v/maxV), borderColor: '#ffd600', borderWidth: 2, tension: 0.3, pointRadius: 2, order: 0 },
+                { label: 'MA60', data: ma60s.map(v => v/maxV), borderColor: '#448aff', borderWidth: 2, tension: 0.3, pointRadius: 2, order: 1 },
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { labels: { color: '#7d8590', boxWidth: 12, padding: 8, font: { size: 11 } } },
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) => {
+                            const idx = ctx.dataIndex;
+                            return [
+                                `成交量: ${formatVol(vols[idx])}`,
+                                `MA3: ${formatVol(ma3s[idx])}`,
+                                `MA60: ${formatVol(ma60s[idx])}`,
+                            ];
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: { grid: { color: 'rgba(47,62,80,0.5)' }, ticks: { color: '#7d8590', font: {size:10}, maxRotation:0, autoSkip:true, maxTicksLimit:15 } },
+                y: { grid: { color: 'rgba(47,62,80,0.5)' }, ticks: { color: '#7d8590', font: {size:10}, callback: v => (v*100).toFixed(0)+'%' } }
+            }
+        }
+    });
+}
+
+function renderHistory() {
+    const tbody = document.getElementById('historyBody');
+    const hist = PAGE_DATA.history || [];
+    if (!hist.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px;">暂无数据</td></tr>'; return; }
+    tbody.innerHTML = hist.slice(0,30).map(r => {
+        const tagClass = r.signal === '金叉' ? 'buy' : r.signal === '死叉' ? 'sell' : r.signal === '持有' ? 'hold' : 'wait';
+        const sign = r.pct_chg >= 0 ? '+' : '';
+        return `<tr>
+            <td style="color:var(--muted)">${r.date}</td>
+            <td><span class="tag ${tagClass}">${r.signal}</span></td>
+            <td class="num-col">${r.close ? r.close.toLocaleString('zh-CN', {minimumFractionDigits:2}) : '—'}</td>
+            <td class="num-col" style="color:${r.pct_chg>=0?'var(--green)':'var(--red)'}">${r.pct_chg !== null ? sign + r.pct_chg.toFixed(2) + '%' : '—'}</td>
+            <td class="num-col">${formatVol(r.ma_vol_short)}</td>
+            <td class="num-col">${formatVol(r.ma_vol_long)}</td>
+            <td class="num-col">${r.short_long_ratio ? (r.short_long_ratio*100).toFixed(1)+'%' : '—'}</td>
+        </tr>`;
+    }).join('');
+}
+
+function renderETFTable() {
+    const tbody = document.getElementById('etfBody');
+    const etfs = [
+        { name: '纳指ETF (513180)', annual: 12.83, benchmark: -9.10, excess: 21.93, maxdd: -35.62, sharpe: 0.509 },
+        { name: '中证2000ETF (563300)', annual: 30.98, benchmark: 20.16, excess: 10.83, maxdd: -25.98, sharpe: 1.333 },
+        { name: '科创板ETF (588000)', annual: 10.70, benchmark: 0.82, excess: 9.88, maxdd: -32.30, sharpe: 0.440 },
+        { name: '中证500ETF (510500)', annual: 25.71, benchmark: 18.71, excess: 6.99, maxdd: -32.60, sharpe: 0.357 },
+        { name: '沪深300ETF (510300)', annual: 7.66, benchmark: 4.69, excess: 2.97, maxdd: -26.03, sharpe: 0.486 },
+        { name: '创业板ETF (159915)', annual: 12.36, benchmark: 11.86, excess: 0.50, maxdd: -38.06, sharpe: 0.524 },
+        { name: '中证1000ETF (512100)', annual: 13.85, benchmark: 14.37, excess: -0.52, maxdd: -23.04, sharpe: 0.779 },
+        { name: '上证50ETF (510050)', annual: 5.78, benchmark: 6.23, excess: -0.45, maxdd: -61.17, sharpe: 0.325 },
+        { name: '微盘股ETF (563360)', annual: 15.99, benchmark: 23.17, excess: -7.18, maxdd: -7.81, sharpe: 1.380 },
+    ];
+    tbody.innerHTML = etfs.map(e => `<tr>
+        <td>${e.name}</td>
+        <td class="num-col" style="color:var(--green)">${e.annual.toFixed(2)}%</td>
+        <td class="num-col">${e.benchmark.toFixed(2)}%</td>
+        <td class="num-col" style="color:${e.excess>=0?'var(--green)':'var(--red)'}">${e.excess>=0?'+':''}${e.excess.toFixed(2)}%</td>
+        <td class="num-col" style="color:var(--red)">${e.maxdd.toFixed(2)}%</td>
+        <td class="num-col">${e.sharpe.toFixed(3)}</td>
+    </tr>`).join('');
+}
+
+renderSignalCard();
+renderChart();
+renderHistory();
+renderETFTable();
+</script>
+<script>window.__PAGE_DATA__ = {"latest": {"date": "2026-04-22", "signal": "sell", "signal_change": 0, "close": 24807.99, "volume": 109319000000.0, "ma_vol_short": 123232000000.0, "ma_vol_long": 141295566666.66666, "short_long_ratio": 0.8721575836184529, "pct_chg": 0.0035, "message": "【空仓】MA3/MA60=87.22%，维持空头信号", "created_at": "2026-04-24 07:03:05"}, "history": [{"date": "2026-04-22", "signal": "sell", "signal_change": 0, "close": 24807.99, "volume": 109319000000.0, "ma_vol_short": 123232000000.0, "ma_vol_long": 141295566666.66666, "short_long_ratio": 0.8721575836184529, "pct_chg": 0.0035, "message": "【空仓】MA3/MA60=87.22%，维持空头信号", "created_at": "2026-04-24 07:03:05"}], "generated_at": "2026-04-24T15:03:28.263923"};</script>
+</body>
+</html>
